@@ -1,35 +1,22 @@
 ---
-- name: validate configuration
+- name: Validate configuration
   assert:
     that:
       - funkwhale_domain is defined
 
-- name: install packages
+- name: Install required packages for Debian/Ubuntu
   apt:
     name: "{{ item }}"
     state: present
     update_cache: yes
   loop:
     - git
+  when: ansible_os_family == "Debian"
 
-- name: check out master branch
-  git:
-    repo: 'https://dev.funkwhale.audio/funkwhale/funkwhale'
-    dest: /srv/funkwhale
-    version: master
-
-- name: Add the user
-  user:
-    name: funkwhale
-    shell: /usr/bin/nologin
-    home: /srv/funkwhale
-    #    create_home: true
-
-- name: install packages
-  apt:
+- name: Install required packages for CentOS/RedHat
+  yum:
     name: "{{ item }}"
     state: present
-    update_cache: yes
   loop:
     - curl
     - python3-pip
@@ -45,45 +32,51 @@
     - libpq-dev
     - postgresql-client
     - python3-dev
+  when: ansible_os_family == "RedHat"
 
+- name: Check out master branch
+  git:
+    repo: 'https://dev.funkwhale.audio/funkwhale/funkwhale'
+    dest: /srv/funkwhale
+    version: master
 
-- name: Install wheel to virtualenv
+- name: Add the user
+  user:
+    name: funkwhale
+    shell: /usr/bin/nologin
+    home: /srv/funkwhale
+
+- name: Install Python dependencies
   pip:
-    name: wheel
+    name: "{{ item }}"
     virtualenv: /srv/funkwhale/virtualenv
     virtualenv_command: /usr/bin/python3 -m venv
+  loop:
+    - wheel
+    - pip
+  tags: install_packages
 
-- name: Upgrade pip to the last version
-  pip:
-    name: pip
-    virtualenv: /srv/funkwhale/virtualenv
-    virtualenv_command: /usr/bin/python3 -m venv
-
-- name: Install requirements
+- name: Install requirements from requirements.txt
   pip:
     requirements: /srv/funkwhale/api/requirements.txt
     virtualenv: /srv/funkwhale/virtualenv
     virtualenv_command: /usr/bin/python3 -m venv
 
-
-# TODO postgres and redis must be on the same host
+# TODO: Postgres and Redis must be on the same host
 - name: Configure beat systemd service
   template:
     src: funkwhale-beat.service.j2
     dest: "/etc/systemd/system/funkwhale-beat.service"
-
 
 - name: Configure server systemd service
   template:
     src: funkwhale-server.service.j2
     dest: "/etc/systemd/system/funkwhale-server.service"
 
-
 - name: Configure worker systemd service
   template:
     src: funkwhale-worker.service.j2
     dest: "/etc/systemd/system/funkwhale-worker.service"
-
 
 - name: Configure systemd target
   template:
@@ -103,7 +96,7 @@
     dest: "/srv/funkwhale/config/.env"
     owner: funkwhale
     group: root
-    mode: 0600
+    mode: '0600'
 
 - name: Run an initial migration
   django_manage:
@@ -118,3 +111,4 @@
     src: funkwhale.conf.j2
     dest: "/etc/nginx/sites-enabled/funkwhale.conf"
   tags: molecule-notest
+
